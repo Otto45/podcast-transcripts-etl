@@ -1,10 +1,10 @@
+import os
 import feedparser
-import re
-from requests import get
-import openai
 import json
 
 def extract_episode_timestamps_and_titles(description):
+    import re
+
     lines = description.split('\n')
     
     # Regular expression to match (HH:MM:SS) Title format
@@ -22,17 +22,25 @@ def extract_episode_timestamps_and_titles(description):
     
     return results
 
-def generate_transcript(podcast_episode):
-    mp3_file = f'{podcast_episode["title"].replace(" ", "_")}.mp3'
-    
-    with open(mp3_file, "wb") as file:
-        response = get(podcast_episode['mp3_url'])
-        file.write(response.content)
-    
-    transcript = None
+def generate_transcript(mp3_url):
+    import assemblyai as aai
 
-    # with open(mp3_file, "rb") as audio_file:
-    #     transcript = openai.Audio.transcribe(model='whisper-1', file=audio_file, language='en')
+    aai.settings.api_key = os.environ["ASSEMBLY_AI_API_TOKEN"]
+    
+    # We are enabling speaker diarization to label the transcript text w/ the speaker
+    config = aai.TranscriptionConfig(speaker_labels=True)
+    transcriber = aai.Transcriber()
+
+    transcript = transcriber.transcribe(mp3_url, config=config)
+    
+    with open('transcript.json', 'w') as file:
+        json.dump(transcript.json_response, file, indent=4)
+    
+    with open('chapters.json', 'w') as file:
+        json.dump(transcript.chapters, file, indent=4)
+
+    with open('transcript.txt', 'w') as file:
+        file.write(transcript.text)
 
     return transcript
 
@@ -52,5 +60,5 @@ for entry in feed.entries[:1]:
     })
 
 for podcast_episode in podcast_episodes:
-    transcript = generate_transcript(podcast_episode)
-    podcast_episode['transcript'] = transcript
+    transcript = generate_transcript(podcast_episode['mp3_url'])
+    # podcast_episode['transcript'] = transcript
