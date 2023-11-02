@@ -2,6 +2,10 @@ import os
 import feedparser
 import json
 
+def timestamp_to_ms(timestamp):
+    hours, minutes, seconds = map(int, timestamp.split(':'))
+    return (hours * 3600 + minutes * 60 + seconds) * 1000
+
 def extract_episode_timestamps_and_titles(description):
     import re
 
@@ -16,7 +20,7 @@ def extract_episode_timestamps_and_titles(description):
         if match:
             timestamp, title = match.groups()
             results.append({
-                'timestamp': timestamp,
+                'timestamp': timestamp_to_ms(timestamp),
                 'title': title.strip()
             })
     
@@ -32,33 +36,59 @@ def generate_transcript(mp3_url):
     transcriber = aai.Transcriber()
 
     transcript = transcriber.transcribe(mp3_url, config=config)
+
+    return transcript.json_response
+
+# def prep_document_for_vector_embedding(podcast_episode, transcript):
+#     from langchain.text_splitter import RecursiveCharacterTextSplitter
+
+#     text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+#         chunk_size=500, chunk_overlap=50, allowed_special="all"
+#     )
+
+#     text_chunks, metadatas = [], []
+
+#     for utterance in transcript['utterances']:
+#         utterance_metadata = {
+#             'start_ms': utterance['start'],
+#             'end_ms': utterance['end'],
+#             'speaker': utterance['speaker']
+#         }
+
+#         utterance_chunks = text_splitter.split_text(utterance['text'])
+#         metadatas_for_utterance_chunks = [utterance_metadata] * len(utterance_chunks)
+
+#         text_chunks += utterance_chunks
+#         metadatas += metadatas_for_utterance_chunks
+
+# Can be done in parallel
+def process_episode(podcast_episode):
+    # transcript = generate_transcript(podcast_episode['mp3_url'])
+    transcript = None
+    with open('transcript.json', 'r') as file:
+        transcript = json.load(file)
     
-    with open('transcript.json', 'w') as file:
-        json.dump(transcript.json_response, file, indent=4)
-    
-    with open('chapters.json', 'w') as file:
-        json.dump(transcript.chapters, file, indent=4)
+    # TODO: Create document
+    # TODO: Prep document for vector embedding
+    # TODO: Store document and embeddings in Mongo
 
-    with open('transcript.txt', 'w') as file:
-        file.write(transcript.text)
 
-    return transcript
+# Main
 
-feed = feedparser.parse('https://feeds.megaphone.fm/hubermanlab')
+# feed = feedparser.parse('https://feeds.megaphone.fm/hubermanlab')
 
-podcast_episodes = []
+# podcast_episodes = []
 
-for entry in feed.entries[:1]:
-    podcast_episodes.append({
-        'original_guid': entry.id if "id" in entry else None,
-        'title': entry.title,
-        'link': entry.link,
-        'publish_date': entry.published,
-        'description': entry.description,
-        'timestamps': extract_episode_timestamps_and_titles(entry.description),
-        'mp3_url': entry.enclosures[0].href
-    })
+# for entry in feed.entries[:1]:
+#     podcast_episodes.append({
+#         'original_guid': entry.id if "id" in entry else None,
+#         'title': entry.title,
+#         'link': entry.link,
+#         'publish_date': entry.published,
+#         'description': entry.description,
+#         'timestamps': extract_episode_timestamps_and_titles(entry.description),
+#         'mp3_url': entry.enclosures[0].href
+#     })
 
-for podcast_episode in podcast_episodes:
-    transcript = generate_transcript(podcast_episode['mp3_url'])
-    # podcast_episode['transcript'] = transcript
+# for podcast_episode in podcast_episodes:
+#    process_episode(podcast_episode)
