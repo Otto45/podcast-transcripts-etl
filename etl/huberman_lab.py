@@ -2,10 +2,14 @@ import os
 from typing import List
 import feedparser
 import json
+import re
 
 from assemblyai import Transcript
 
 from customtypes.podcast_episode import PodcastEpisode, PodcastEpisodeTimestamp
+
+# TODO: Store this in a database!!!
+OPENAI_FILE_IDS = []
 
 def timestamp_to_ms(timestamp) -> int:
     hours, minutes, seconds = map(int, timestamp.split(':'))
@@ -17,7 +21,7 @@ def extract_episode_timestamps_and_titles(description) -> List[PodcastEpisodeTim
     lines = description.split('\n')
     
     # Regular expression to match (HH:MM:SS) Title format
-    pattern = r'^\((\d{2}:\d{2}:\d{2})\) ([^\(]+)$'
+    pattern = r'^\((\d{2}:\d{2}:\d{2})\)\s(.+)$'
     
     results = []
     for line in lines:
@@ -98,6 +102,7 @@ def get_generated_transcript(id: str):
 def create_document(podcast_episode: PodcastEpisode, transcript: Transcript):
     document = {}
 
+    document['podcast_name'] = podcast_episode.podcast_name
     document['title'] = podcast_episode.title
     document['audio_url'] = podcast_episode.audio_url
     document['description'] = podcast_episode.description
@@ -155,7 +160,30 @@ def create_document(podcast_episode: PodcastEpisode, transcript: Transcript):
     document['transcript'] = episode_utterances
     
     return document
+
+def save_document_to_openai_files(document):
+    from openai import OpenAI
+    client = OpenAI()
+
+    episode_title = document['title']
+    episode_title = re.sub(r'\W', '_', episode_title)
+    episode_title = re.sub(r'__+', '_', episode_title)
+
+    json_str = json.dumps(document)
+    json_bytes = json_str.encode('utf-8')
     
+    file = client.files.create(
+        file=(f'{episode_title}.json', json_bytes),
+        purpose='assistants'
+    )
+
+    OPENAI_FILE_IDS.append(file.id)
+
+def save_document(document):
+    # TODO: Implement this to save the whole document and its chunks w/ vectors
+    pass
+
+
 # Can be done in parallel
 def process_episode(podcast_episode: PodcastEpisode):
     audio_url = podcast_episode.audio_url
@@ -171,10 +199,7 @@ def process_episode(podcast_episode: PodcastEpisode):
     with open('document.json', 'w') as file:
         json.dump(document, file, indent=4)
 
-    # TODO: Save the full document in its own collection, separate from the collection below storing the chunks and their vector embeddings
-    # TODO: Prep document for vector embedding
-    # TODO: Store document and embeddings in Mongo
-
+    save_document(document)
 
 # Main
 
@@ -198,6 +223,7 @@ entry = next((entry for entry in feed.entries if search_string in entry.title), 
 
 podcast_episode = PodcastEpisode(
     original_guid=entry.id if "id" in entry else None,
+    podcast_name="Huberman Lab",
     title=entry.title,
     link=entry.link,
     publish_date=entry.published,

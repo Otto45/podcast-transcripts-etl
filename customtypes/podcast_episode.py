@@ -10,6 +10,7 @@ class PodcastEpisode:
 
     def __init__(
             self,
+            podcast_name: str,
             title: str,
             audio_url: str,
             description: str,
@@ -19,6 +20,7 @@ class PodcastEpisode:
             timestamps: List[PodcastEpisodeTimestamp] = None
     ):
 
+        self.podcast_name = podcast_name
         self.title = title
         self.audio_url = audio_url
         self.description = description
