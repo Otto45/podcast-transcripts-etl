@@ -32,6 +32,5 @@ environment: ## installs required environment for deployment and corpus generati
 	python -m pip install -qqq -r requirements.txt
 
 run-etls: environment ## runs our etls to load data into our db
-	python -m spacy download en_core_web_sm
 	python -m etl.huberman_lab
 

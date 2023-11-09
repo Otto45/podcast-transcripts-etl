@@ -1,3 +1,4 @@
+import json
 import os
 from typing import List
 
@@ -28,19 +29,38 @@ def extract_episode_timestamps_and_titles(description) -> List[PodcastEpisodeTim
     return results
 
 def get_names_in_text(text: str) -> List[str]:
-    import spacy
+    from openai import OpenAI
 
-    nlp = spacy.load("en_core_web_sm")
+    client = OpenAI()
 
-    # Process the title to find named entities
-    # TODO: Improve this to handle prefixes and suffixes (e.g. "Dr.", "Sr.", etc.)
-    doc = nlp(text)
+    prompt = f"""
+Hello! Can you return a JSON list containing people's names from the following text:
 
-    # Extract entities labeled as 'PERSON'
-    persons = set(ent.text for ent in doc.ents if ent.label_ == 'PERSON')
+"{text}"
 
-    # Return the unique names as a list
-    return list(persons)
+Also, if the person has a title, like "Mr", "Mrs", "Ms", "Dr", etc., please include it with their name.
+Here is an example:
+
+Text: "Steve Austin & Dr. Chow: The Ultimate Mashup!"
+
+JSON: {{ "names": ["Steve Austin", "Dr. Chow"]}}
+
+When you respond, ONLY RESPOND WITH THE JSON!!!
+"""
+    chat_completion = client.chat.completions.create(
+        messages=[
+            {
+                'role': 'user',
+                'content': prompt
+            }
+        ],
+        model='gpt-3.5-turbo'
+    )
+
+    json_response = json.loads(chat_completion.choices[0].message.content)
+    names = json_response['names']
+    print(names)
+    return names
 
 def generate_transcript(
         audio_url: str, num_speakers: int, auto_chapters = False
@@ -166,11 +186,23 @@ def save_episode_document(document):
         print(e)
 
 def prep_episode_document_for_vector_embedding(document) -> tuple[List[str], List[str]]:
+    import tiktoken
     from langchain.text_splitter import RecursiveCharacterTextSplitter
 
+    openai_model = 'gpt-4'
+    openai_model_context_window = 8192
+    # We need to split the speaker's utterances into small enough chunks where more than one
+    # can be in a context window at a time as the user chats with the model
+    utterance_max_token_length = openai_model_context_window / 4
+
     text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-        chunk_size=1000, chunk_overlap=150, allowed_special="all"
+        model_name=openai_model,
+        chunk_size=utterance_max_token_length,
+        chunk_overlap=250,
+        allowed_special="all"
     )
+
+    encoding = tiktoken.encoding_for_model(openai_model)
 
     text_chunks: List[str] = []
     metadatas: List[str] = []
@@ -182,11 +214,18 @@ def prep_episode_document_for_vector_embedding(document) -> tuple[List[str], Lis
             'end_ms': utterance['end_ms']
         }
 
-        utterance_chunks = text_splitter.split_text(utterance['text'])
-        metadatas_for_utterance_chunks = [utterance_metadata] * len(utterance_chunks)
+        text = utterance['text']
 
-        text_chunks += utterance_chunks
-        metadatas += metadatas_for_utterance_chunks
+        # Only split the text if the speaker's utterance is too many tokens for a chat context
+        if (len(encoding.encode(text)) <= utterance_max_token_length):
+            text_chunks.append(text)
+            metadatas.append(utterance_metadata)
+        else:
+            utterance_chunks = text_splitter.split_text(text)
+            metadatas_for_utterance_chunks = [utterance_metadata] * len(utterance_chunks)
+
+            text_chunks += utterance_chunks
+            metadatas += metadatas_for_utterance_chunks
     
     return text_chunks, metadatas
 
@@ -224,14 +263,14 @@ def process_episode(podcast_episode: PodcastEpisode):
     transcript = get_generated_transcript('6na40xqpvm-0ce9-4f3b-82af-9f039117de14')
 
     document = create_episode_document(podcast_episode, transcript)
-    # with open('episode_document.json', 'w') as file:
-    #     json.dump(document, file, indent=4)
+    with open('episode_document.json', 'w') as file:
+        json.dump(document, file, indent=4)
 
-    chunks, metadatas = prep_episode_document_for_vector_embedding(document)
+    # chunks, metadatas = prep_episode_document_for_vector_embedding(document)
 
-    create_and_save_vector_embeddings(chunks, metadatas)
+    # create_and_save_vector_embeddings(chunks, metadatas)
 
-    save_episode_document(document)
+    # save_episode_document(document)
 
 # Main
 import feedparser
