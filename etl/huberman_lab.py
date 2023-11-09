@@ -1,15 +1,9 @@
 import os
 from typing import List
-import feedparser
-import json
-import re
 
 from assemblyai import Transcript
 
 from customtypes.podcast_episode import PodcastEpisode, PodcastEpisodeTimestamp
-
-# TODO: Store this in a database!!!
-OPENAI_FILE_IDS = []
 
 def timestamp_to_ms(timestamp) -> int:
     hours, minutes, seconds = map(int, timestamp.split(':'))
@@ -39,6 +33,7 @@ def get_names_in_text(text: str) -> List[str]:
     nlp = spacy.load("en_core_web_sm")
 
     # Process the title to find named entities
+    # TODO: Improve this to handle prefixes and suffixes (e.g. "Dr.", "Sr.", etc.)
     doc = nlp(text)
 
     # Extract entities labeled as 'PERSON'
@@ -77,29 +72,23 @@ def get_generated_transcript(id: str):
 
     return transcript
 
-# def prep_document_for_vector_embedding(podcast_episode, transcript):
-#     from langchain.text_splitter import RecursiveCharacterTextSplitter
+def match_speaker_label_with_name(speaker_label: str, podcast_guest_names: List[str]) -> str:
+    # TODO: FIX THIS METHOD TO ACTUAL PICK THE RIGHT NAME FOR THE SPEAKER LABEL
+    match speaker_label:
+        case 'A':
+            return podcast_guest_names[0]
+        case 'B':
+            return podcast_guest_names[1]
+        case 'C':
+            return podcast_guest_names[2]
+        case 'D':
+            return podcast_guest_names[3]
+        case 'E':
+            return podcast_guest_names[4]
+        case _:
+            raise ValueError(f'Could not match speaker label "{speaker_label}" with a name')
 
-#     text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
-#         chunk_size=500, chunk_overlap=50, allowed_special="all"
-#     )
-
-#     text_chunks, metadatas = [], []
-
-#     for utterance in transcript['utterances']:
-#         utterance_metadata = {
-#             'start_ms': utterance['start'],
-#             'end_ms': utterance['end'],
-#             'speaker': utterance['speaker']
-#         }
-
-#         utterance_chunks = text_splitter.split_text(utterance['text'])
-#         metadatas_for_utterance_chunks = [utterance_metadata] * len(utterance_chunks)
-
-#         text_chunks += utterance_chunks
-#         metadatas += metadatas_for_utterance_chunks
-
-def create_document(podcast_episode: PodcastEpisode, transcript: Transcript):
+def create_episode_document(podcast_episode: PodcastEpisode, transcript: Transcript):
     document = {}
 
     document['podcast_name'] = podcast_episode.podcast_name
@@ -142,14 +131,15 @@ def create_document(podcast_episode: PodcastEpisode, transcript: Transcript):
 
         document['chapters'] = episode_chapters
     
-    
-    
     episode_utterances = []
-    podcast_guests = get_names_in_text(podcast_episode.title)
+    podcast_guests = [podcast_episode.podcast_host]
+
+    for name in get_names_in_text(podcast_episode.title):
+        podcast_guests.append(name)
 
     for utterance in transcript.utterances:
         episode_utterance = {
-            'speaker': utterance.speaker, # TODO: Match speaker w/ their name
+            'speaker': match_speaker_label_with_name(utterance.speaker, podcast_guests),
             'text': utterance.text,
             'start_ms': utterance.start,
             'end_ms': utterance.end
@@ -161,28 +151,66 @@ def create_document(podcast_episode: PodcastEpisode, transcript: Transcript):
     
     return document
 
-def save_document_to_openai_files(document):
-    from openai import OpenAI
-    client = OpenAI()
+def save_episode_document(document):    
+    from pymongo.mongo_client import MongoClient
+    from pymongo.server_api import ServerApi
 
-    episode_title = document['title']
-    episode_title = re.sub(r'\W', '_', episode_title)
-    episode_title = re.sub(r'__+', '_', episode_title)
+    uri = os.environ['MONGODB_ATLAS_CLUSTER_URI']
+    client = MongoClient(uri, server_api=ServerApi('1'))
 
-    json_str = json.dumps(document)
-    json_bytes = json_str.encode('utf-8')
-    
-    file = client.files.create(
-        file=(f'{episode_title}.json', json_bytes),
-        purpose='assistants'
+    try:
+        db = client['pod_search']
+        collection = db['podcast_episodes']
+        collection.insert_one(document)
+    except Exception as e:
+        print(e)
+
+def prep_episode_document_for_vector_embedding(document) -> tuple[List[str], List[str]]:
+    from langchain.text_splitter import RecursiveCharacterTextSplitter
+
+    text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
+        chunk_size=1000, chunk_overlap=150, allowed_special="all"
     )
 
-    OPENAI_FILE_IDS.append(file.id)
+    text_chunks: List[str] = []
+    metadatas: List[str] = []
 
-def save_document(document):
-    # TODO: Implement this to save the whole document and its chunks w/ vectors
-    pass
+    for utterance in document['transcript']:
+        utterance_metadata = {
+            'speaker': utterance['speaker'],
+            'start_ms': utterance['start_ms'],
+            'end_ms': utterance['end_ms']
+        }
 
+        utterance_chunks = text_splitter.split_text(utterance['text'])
+        metadatas_for_utterance_chunks = [utterance_metadata] * len(utterance_chunks)
+
+        text_chunks += utterance_chunks
+        metadatas += metadatas_for_utterance_chunks
+    
+    return text_chunks, metadatas
+
+def create_and_save_vector_embeddings(text_chunks: List[str], metadatas: List[str]):
+    from pymongo.mongo_client import MongoClient
+    from pymongo.server_api import ServerApi, ServerApiVersion
+    from langchain.embeddings import OpenAIEmbeddings
+    from langchain.vectorstores import MongoDBAtlasVectorSearch
+
+    uri = os.environ['MONGODB_ATLAS_CLUSTER_URI']
+    client = MongoClient(uri, server_api=ServerApi(ServerApiVersion.V1))
+
+    db_name = "pod_search"
+    collection_name = "podcast_episode_embeddings"
+    collection = client[db_name][collection_name]
+    index_name = "episode_embeddings"
+
+    vector_store = MongoDBAtlasVectorSearch(
+        collection,
+        embedding=OpenAIEmbeddings(disallowed_special=()),
+        index_name=index_name
+    )
+
+    vector_store.add_texts(text_chunks, metadatas)
 
 # Can be done in parallel
 def process_episode(podcast_episode: PodcastEpisode):
@@ -193,15 +221,20 @@ def process_episode(podcast_episode: PodcastEpisode):
     # If the podcast does not provide timestamps for the different "chapters" of the episode, have AssemblyAI generate them
     auto_chapters = True if podcast_episode.timestamps is None or len(podcast_episode.timestamps) == 0 else False
     # transcript = generate_transcript(audio_url, num_speakers, auto_chapters)
-    transcript = get_generated_transcript('6nzizy4gqq-6592-4a7c-9adf-00567deaef53')
+    transcript = get_generated_transcript('6na40xqpvm-0ce9-4f3b-82af-9f039117de14')
 
-    document = create_document(podcast_episode, transcript)
-    with open('document.json', 'w') as file:
-        json.dump(document, file, indent=4)
+    document = create_episode_document(podcast_episode, transcript)
+    # with open('episode_document.json', 'w') as file:
+    #     json.dump(document, file, indent=4)
 
-    save_document(document)
+    chunks, metadatas = prep_episode_document_for_vector_embedding(document)
+
+    create_and_save_vector_embeddings(chunks, metadatas)
+
+    save_episode_document(document)
 
 # Main
+import feedparser
 
 feed = feedparser.parse('https://feeds.megaphone.fm/hubermanlab')
 
@@ -224,6 +257,7 @@ entry = next((entry for entry in feed.entries if search_string in entry.title), 
 podcast_episode = PodcastEpisode(
     original_guid=entry.id if "id" in entry else None,
     podcast_name="Huberman Lab",
+    podcast_host="Dr. Andrew Huberman",
     title=entry.title,
     link=entry.link,
     publish_date=entry.published,

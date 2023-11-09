@@ -11,6 +11,7 @@ class PodcastEpisode:
     def __init__(
             self,
             podcast_name: str,
+            podcast_host: str,
             title: str,
             audio_url: str,
             description: str,
@@ -21,6 +22,7 @@ class PodcastEpisode:
     ):
 
         self.podcast_name = podcast_name
+        self.podcast_host = podcast_host
         self.title = title
         self.audio_url = audio_url
         self.description = description
