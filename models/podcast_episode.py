@@ -15,6 +15,7 @@ class PodcastEpisode:
             title: str,
             audio_url: str,
             description: str,
+            guest_names: List[str] = None,
             original_guid: str = None,
             link: str = None,
             publish_date: str = None,
@@ -26,6 +27,7 @@ class PodcastEpisode:
         self.title = title
         self.audio_url = audio_url
         self.description = description
+        self.guest_names = guest_names
         self.original_guid = original_guid
         self.link = link
         self.publish_date = publish_date
