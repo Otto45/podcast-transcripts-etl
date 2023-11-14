@@ -15,7 +15,7 @@ def create_and_save_vector_embeddings(document: Dict[str, str]) -> None:
     db_name = "pod_search"
     collection_name = "podcast_episode_embeddings"
     collection = client[db_name][collection_name]
-    index_name = "episode_embeddings"
+    index_name = "podcast_episode_embeddings"
 
     vector_store = MongoDBAtlasVectorSearch(
         collection,

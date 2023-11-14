@@ -10,19 +10,18 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 def create_episode_document(podcast_episode: PodcastEpisode, transcript: Transcript) -> Dict[str, str]:
     document = {}
 
+    document['assemblyai-id'] = transcript.id
     document['podcast_name'] = podcast_episode.podcast_name
     document['title'] = podcast_episode.title
     document['audio_url'] = podcast_episode.audio_url
     document['description'] = podcast_episode.description
+    document['publish_date'] = podcast_episode.publish_date
     
     if podcast_episode.original_guid is not None:
         document['original_guid'] = podcast_episode.original_guid
     
     if podcast_episode.link is not None:
         document['link'] = podcast_episode.link
-
-    if podcast_episode.publish_date is not None:
-        document['publish_date'] = podcast_episode.publish_date
 
     if podcast_episode.timestamps is not None:
         episode_timestamps = []
@@ -56,15 +55,32 @@ def create_episode_document(podcast_episode: PodcastEpisode, transcript: Transcr
     if podcast_episode.guest_names is not None:
         speaker_names += podcast_episode.guest_names
 
-    for utterance in transcript.utterances:
-        episode_utterance = {
-            'speaker': match_speaker_label_with_name(utterance.speaker, speaker_names),
-            'text': utterance.text,
-            'start_ms': utterance.start,
-            'end_ms': utterance.end
-        }
+    if len(speaker_names) > 2:
+        # For now, we need a human to match speakers with their names if
+        # there are more than one guests on the podcast
+        for utterance in transcript.utterances:
+            episode_utterance = {
+                'speaker': utterance.speaker,
+                'text': utterance.text,
+                'start_ms': utterance.start,
+                'end_ms': utterance.end
+            }
 
-        episode_utterances.append(episode_utterance)
+            episode_utterances.append(episode_utterance)
+
+        document['speaker-names'] = speaker_names
+    else:
+        podcast_guest = speaker_names[1]
+        
+        for utterance in transcript.utterances:
+            episode_utterance = {
+                'speaker': podcast_episode.podcast_host if utterance.speaker == 'A' else podcast_guest,
+                'text': utterance.text,
+                'start_ms': utterance.start,
+                'end_ms': utterance.end
+            }
+
+            episode_utterances.append(episode_utterance)
     
     document['transcript'] = episode_utterances
     
@@ -92,10 +108,15 @@ def prep_episode_document_for_vector_embedding(document: Dict[str, str]) -> tupl
 
     for utterance in document['transcript']:
         utterance_metadata = {
+            'podcast_name': document['podcast_name'],
+            'title': document['title'],
             'speaker': utterance['speaker'],
             'start_ms': utterance['start_ms'],
             'end_ms': utterance['end_ms']
         }
+
+        if 'link' in document:
+            utterance_metadata['link'] = document['link']
 
         text = utterance['text']
 

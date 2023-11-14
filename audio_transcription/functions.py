@@ -1,9 +1,10 @@
+import asyncio
 import os
 
 import assemblyai as aai
 from assemblyai import Transcript
 
-def generate_transcript(
+async def generate_transcript(
         audio_url: str, num_speakers: int, auto_chapters = False
 ) -> Transcript:
     
@@ -19,9 +20,13 @@ def generate_transcript(
     )
 
     transcriber = aai.Transcriber()
-    transcript = transcriber.transcribe(audio_url, config=config)
-    
-    return transcript
+
+    # The AssemblyAI sdk uses the concurrent.futures module, so "wrap" it in an asyncio
+    # executor so we can use asyncio everywhere else in our code
+    loop = asyncio.get_running_loop()
+    future = await loop.run_in_executor(None, transcriber.transcribe_async, audio_url, config)
+
+    return future.result()
 
 def get_generated_transcript(id: str) -> Transcript:
     aai.settings.api_key = os.environ["ASSEMBLY_AI_API_TOKEN"]

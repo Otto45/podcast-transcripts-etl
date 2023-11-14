@@ -56,8 +56,6 @@ When you respond, ONLY RESPOND WITH A JSON STRING, NOT WITH MARKDOWN OR ANY OTHE
 
     names = None
 
-    print(chat_completion)
-
     if len(chat_completion.choices) > 0 and chat_completion.choices[0].message.content is not None:
         json_response = json.loads(chat_completion.choices[0].message.content)
 
