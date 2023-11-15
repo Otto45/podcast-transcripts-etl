@@ -69,12 +69,22 @@ def create_episode_document(podcast_episode: PodcastEpisode, transcript: Transcr
             episode_utterances.append(episode_utterance)
 
         document['speaker-names'] = speaker_names
-    else:
+    elif len(speaker_names) == 2:
         podcast_guest = speaker_names[1]
         
         for utterance in transcript.utterances:
             episode_utterance = {
                 'speaker': podcast_episode.podcast_host if utterance.speaker == 'A' else podcast_guest,
+                'text': utterance.text,
+                'start_ms': utterance.start,
+                'end_ms': utterance.end
+            }
+
+            episode_utterances.append(episode_utterance)
+    else:
+        for utterance in transcript.utterances:
+            episode_utterance = {
+                'speaker': podcast_episode.podcast_host,
                 'text': utterance.text,
                 'start_ms': utterance.start,
                 'end_ms': utterance.end
