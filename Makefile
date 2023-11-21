@@ -34,3 +34,5 @@ environment: ## installs required environment for deployment and corpus generati
 run-etls: environment ## runs our etls to load data into our db
 	python -m etl.huberman_lab
 
+chat: environment ## runs our etls to load data into our db
+	python cli_chat.py
