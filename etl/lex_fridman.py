@@ -1,4 +1,6 @@
 import asyncio
+import os
+import requests
 from typing import List
 from databases.document import get_episode_titles
 from models.podcast_episode import PodcastEpisode
@@ -8,9 +10,18 @@ from utils.podcast_episode_metadata import extract_episode_timestamps_and_titles
 import feedparser
 
 async def main():
-    PODCAST_NAME = 'Huberman Lab'
+    PODCAST_NAME = 'Lex Fridman Podcast'
+    RSS_FILE_NAME = 'lex_fridman_rss'
+
+    rss_file_response = requests.get('https://lexfridman.com/feed/podcast/')
+
+    if rss_file_response.status_code == 200:
+        with open(RSS_FILE_NAME, 'wb') as file:
+            file.write(rss_file_response.content)
+    else:
+        print(f'Failed to download the {PODCAST_NAME} RSS feed')
     
-    feed = feedparser.parse('https://feeds.megaphone.fm/hubermanlab')
+    feed = feedparser.parse(RSS_FILE_NAME)
     # Sort by published date desc
     sorted_entries = sorted(feed.entries, key=lambda e: e.published_parsed, reverse=True)
 
@@ -27,7 +38,7 @@ async def main():
         podcast_episodes.append(PodcastEpisode(
         original_guid=entry.id if 'id' in entry else None,
         podcast_name=PODCAST_NAME,
-        podcast_host='Dr. Andrew Huberman',
+        podcast_host='Lex Fridman',
         guest_names=get_guest_names_from_title(entry.title),
         title=entry.title,
         link=entry.link,
@@ -38,5 +49,7 @@ async def main():
 
     tasks = [process_new_episode(podcast_episode) for podcast_episode in podcast_episodes]
     await asyncio.gather(*tasks)
-        
+
+    os.remove(RSS_FILE_NAME)
+    
 asyncio.run(main())

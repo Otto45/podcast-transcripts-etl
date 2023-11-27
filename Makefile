@@ -31,8 +31,11 @@ environment: ## installs required environment for deployment and corpus generati
 	fi
 	python -m pip install -qqq -r requirements.txt
 
-run-etls: environment ## runs our etls to load data into our db
+run-huberman-etl: environment
 	python -m etl.huberman_lab
 
-chat: environment ## runs our etls to load data into our db
+run-fridman-etl: environment
+	python -m etl.lex_fridman
+
+chat: environment
 	python cli_chat.py

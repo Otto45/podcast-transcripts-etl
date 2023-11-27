@@ -10,8 +10,8 @@ from openai import OpenAI
 def extract_episode_timestamps_and_titles(description: str) -> List[PodcastEpisodeTimestamp]:
     lines = description.split('\n')
     
-    # Regular expression to match (HH:MM:SS) Title format
-    pattern = r'^\((\d{2}:\d{2}:\d{2})\)\s(.+)$'
+    # Regular expression to match timestamps in multiple formats found within paranthesis
+    pattern = r'^\((\d{1,2}:\d{2}:\d{2}|\d{2}:\d{2})\)\s(.+)$'
     
     results = []
     for line in lines:
